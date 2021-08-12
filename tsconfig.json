@@ -6,6 +6,7 @@
     "baseUrl": ".",
     "checkJs": false,
     "declaration": true,
+    "downlevelIteration": true,
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
     "experimentalDecorators": true,
@@ -18,7 +19,7 @@
       "ESNext"
     ],
     "listEmittedFiles": true,
-    "module": "ESNext",
+    "module": "CommonJS",
     "moduleResolution": "node",
     "noEmit": false,
     "outDir": "dist",
@@ -37,7 +38,7 @@
     "strictFunctionTypes": true,
     "strictNullChecks": false,
     "strictPropertyInitialization": false,
-    "target": "ESNext",
+    "target": "ES3",
     "typeRoots": [
       "node_modules/@types/"
     ]

@@ -20,6 +20,7 @@ module.exports = {
     'no-unreachable': 'error',
     'no-useless-rename': 'error',
     'no-useless-concat': 'error',
+    'no-undef': 'off',
     semi: ['error', 'always'],
     'comma-dangle': ['error', 'always-multiline'],
   },

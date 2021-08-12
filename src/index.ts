@@ -1,111 +1,117 @@
-import cheerio from 'cheerio';
-import fs from 'fs';
+import {Exercise} from './Exercise';
 import path from 'path';
-import type {Element} from 'domhandler';
+import {Question} from './Question';
+import {fstat, writeFileSync} from 'fs';
+import {execSync} from 'child_process';
 
-const TEACHER_FILE: string = path.resolve(
-  process.cwd(),
-  'files',
-  'example-gv.html',
-);
-const STUDENT_FILE: string = path.resolve(
-  process.cwd(),
-  'files',
-  'example-hs.html',
-);
-const TEACHER_RESULT_FILE: string = path.resolve(
-  process.cwd(),
-  'files',
-  'result-gv.html',
-);
-const STUDENT_RESULT_FILE: string = path.resolve(
-  process.cwd(),
-  'files',
-  'result-hs.html',
-);
+const {readFileSync} = require('fs');
+const {JSDOM} = require('jsdom');
 
-function parseFile(filePath: string): Element[][] {
-  const fContent: string = fs.readFileSync(filePath, 'utf-8');
-  const $ = cheerio.load(fContent);
-  const wordSection1 = $($('div.WordSection1').first());
-  const children = wordSection1.children();
-  const questions: Element[][] = [];
-  let index: number = -1;
-  for (let i = 1; i < children.length; i++) {
-    const element: Element = children.get(i);
-    if (
-      $(element)
-        .text()
-        .trim()
-        .match(/^([0-9]+)\.\s+/gm)
-    ) {
-      index++;
-      if (!questions.hasOwnProperty(index)) {
-        questions[index] = [];
-      }
-    }
-    questions[index].push(element);
-  }
-  return questions;
-}
-
-const teacherQuestions: Element[][] = parseFile(TEACHER_FILE);
-const studentQuestions: Element[][] = parseFile(STUDENT_FILE);
-
-function createNewRandomArray(source: Element[][]): number[] {
-  const src: number[] = source.map((...[, index]) => index);
-  let dest: number[] = [];
-  while (src.length > 0) {
-    const index: number = Math.floor(Math.random() * src.length);
-    dest = [...dest, src[index]];
-    src.splice(index, 1);
-  }
-  return dest;
-}
-
-const randomIndexes: number[] = createNewRandomArray(teacherQuestions);
-
-const newTeacherQuestions: Element[][] = randomIndexes.map((index: number) => {
-  return teacherQuestions[index];
-});
-const newStudentQuestions: Element[][] = randomIndexes.map((index: number) => {
-  return studentQuestions[index];
-});
-
-const $teacherDOM = cheerio.load(fs.readFileSync(TEACHER_FILE, 'utf-8'));
-const $studentDOM = cheerio.load(fs.readFileSync(STUDENT_FILE, 'utf-8'));
-
-function createFinalElementList($dom: any, input: Element[][]): Element[] {
-  let result: Element[] = [];
-  input.forEach((el: Element[], index: number) => {
-    const e: Element = el[0];
-    $dom(e).html(
-      $dom(e)
-        .html()
-        .replace(/>\s*([0-9]+)\.\s*</, `>${index + 1}.<`),
-    );
-    el.forEach((e: Element) => {
-      result = [...result, e];
-    });
+function readFile(path: string): string {
+  return readFileSync(path, {
+    encoding: 'utf-8',
   });
-  return result;
 }
 
-const teacherFinal: Element[] = createFinalElementList(
-  $teacherDOM,
-  newTeacherQuestions,
-);
-const studentFinal: Element[] = createFinalElementList(
-  $studentDOM,
-  newStudentQuestions,
-);
+const GV = new JSDOM(readFile(path.resolve(process.cwd(), 'files/GV.html')));
+const HS = new JSDOM(readFile(path.resolve(process.cwd(), 'files/HS.html')));
 
-$teacherDOM('div.WordSection1').html(
-  teacherFinal.map((e: Element) => $teacherDOM.html(e)).join('\n'),
-);
-$studentDOM('div.WordSection1').html(
-  studentFinal.map((e: Element) => $studentDOM.html(e)).join('\n'),
-);
+function readBody(body: HTMLBodyElement): Exercise[] {
+  const exercises: Exercise[] = [];
+  for (const child of body.children) {
+    switch (child.tagName.toLowerCase()) {
+      case 'p':
+        const exercise: Exercise = new Exercise();
+        exercise.title = child.outerHTML;
+        exercise.questions = [];
+        exercises.push(exercise);
+        break;
 
-fs.writeFileSync(TEACHER_RESULT_FILE, $teacherDOM.html());
-fs.writeFileSync(STUDENT_RESULT_FILE, $studentDOM.html());
+      case 'ol':
+        const currentExercise = exercises[exercises.length - 1];
+        if (currentExercise) {
+          let body = '';
+          let nextSib = child.nextElementSibling;
+          while (nextSib?.tagName.toLowerCase() === 'ul') {
+            body += nextSib.outerHTML;
+            nextSib = nextSib.nextElementSibling;
+          }
+          const question: Question = new Question();
+          question.title = child.outerHTML;
+          question.body = body;
+          currentExercise.questions.push(question);
+        }
+        break;
+
+      default:
+        continue;
+    }
+  }
+  return exercises;
+}
+
+function shuffle(array: any[]) {
+  var currentIndex = array.length,
+    randomIndex;
+
+  // While there remain elements to shuffle...
+  while (currentIndex !== 0) {
+    // Pick a remaining element...
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+
+    // And swap it with the current element.
+    [array[currentIndex], array[randomIndex]] = [
+      array[randomIndex],
+      array[currentIndex],
+    ];
+  }
+
+  return array;
+}
+
+function createElementFromHTML(htmlString: string): HTMLElement {
+  var div = GV.window.document.createElement('div');
+  div.innerHTML = htmlString.trim();
+
+  // Change this to div.childNodes to support multiple top-level nodes
+  return div.firstChild as HTMLElement;
+}
+
+const gvExercises = readBody(GV.window.document.body);
+const hsExercises = readBody(HS.window.document.body);
+gvExercises.forEach((e, ei) => {
+  e.questions.forEach((q, qi) => {
+    q.hs = hsExercises[ei].questions[qi];
+  });
+});
+
+gvExercises.forEach((e) => {
+  shuffle(e.questions);
+});
+
+function writeFile(
+  outFile: string,
+  exercises: Exercise[],
+  hs: boolean = false,
+) {
+  let result = '';
+  exercises.forEach((exercise) => {
+    result += exercise.title;
+    result += exercise.questions
+      .map((question, qi) => {
+        let q = hs ? question.hs : question;
+        const element = createElementFromHTML(q.title);
+        return (
+          `<ol start="${qi + 1}" type="1">${element.innerHTML}</ol>` + q.body
+        );
+      })
+      .join('');
+  });
+  writeFileSync(outFile, result);
+}
+
+writeFile('files/GV-out.html', gvExercises);
+writeFile('files/HS-out.html', gvExercises, true);
+execSync('pandoc --from=html --to=docx files/GV-out.html -o GV-out.docx');
+execSync('pandoc --from=html --to=docx files/HS-out.html -o HS-out.docx');

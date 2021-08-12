@@ -3,3 +3,4 @@
 /node_modules
 /dist
 /files
+.DS_Store
